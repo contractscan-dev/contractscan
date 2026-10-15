@@ -1,0 +1,15 @@
+:root{--bg:#080c16;--fg:#e5e7eb;--mut:#9ca3af;--acc:#22c55e;--card:#111827;--warn:#f59e0b;--bad:#ef4444}
+*{box-sizing:border-box}body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;background:var(--bg);color:var(--fg);line-height:1.6}
+a{color:var(--acc)}main,header,footer{max-width:920px;margin:auto;padding:16px}
+header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}header nav a{margin-left:14px;text-decoration:none}
+.brand{font-weight:800;font-size:1.3em;color:var(--fg);text-decoration:none}.brand span{color:var(--acc)}
+textarea{width:100%;height:300px;font-family:ui-monospace,monospace;background:#0b1220;color:var(--fg);border:1px solid #334;border-radius:6px;padding:8px}
+input{background:#0b1220;color:var(--fg);border:1px solid #334;border-radius:6px;padding:6px}button{background:var(--acc);color:#04120a;border:0;border-radius:6px;padding:7px 14px;font-weight:700;cursor:pointer}
+button.sec{background:#1f2937;color:var(--fg)}.disc{background:#2a1f05;border:2px solid var(--warn);padding:10px;font-weight:bold;border-radius:6px}
+.f{border-left:4px solid #555;padding:6px 10px;margin:8px 0;background:var(--card)}.high{border-color:var(--bad)}.medium{border-color:var(--warn)}.low{border-color:#38bdf8}
+.v{font-size:1.6em;margin:12px 0}small,.mut{color:var(--mut)}.err{color:var(--bad)}pre{background:#0b1220;overflow:auto;padding:10px;border-radius:6px}
+.box{background:#0b1a2a;border:1px solid #2563eb;padding:8px;font-family:ui-monospace,monospace;border-radius:6px;word-break:break-all}
+.code{background:#052e16;border:3px solid var(--acc);padding:10px;margin:8px 0;border-radius:6px}#codeVal{font-size:1.6em;font-family:ui-monospace,monospace;font-weight:bold;margin:6px 0}#codeWarn{color:#fca5a5;font-weight:bold}
+.toggle{float:right}.card{background:var(--card);padding:14px;border-radius:8px;margin:16px 0}.hp{position:absolute;left:-10000px;width:1px;height:1px;overflow:hidden}
+details{background:var(--card);margin:8px 0;padding:8px 12px;border-radius:6px}summary{cursor:pointer;font-weight:600}
+footer{border-top:1px solid #1f2937;margin-top:32px;font-size:.9em;color:var(--mut)}article h2{margin-top:1.6em}.fb{margin-top:12px}
