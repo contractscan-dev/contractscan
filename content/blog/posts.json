@@ -1,1 +1,9 @@
-[]
+[
+ {
+  "slug": "ai-written-solidity-24-contracts-scanned",
+  "title": "We asked DeepSeek to write 24 smart contracts, then scanned them: results and false positives",
+  "description": "24 AI-written Solidity contracts, scanned with Slither, Aderyn and ContractScan and triaged by hand: 2 confirmed bugs, many false positives, and one insolvency nobody flagged.",
+  "date": "2026-10-15",
+  "author": "ContractScan Team"
+ }
+]

@@ -3,6 +3,8 @@ import html, json, os, datetime
 HERE = os.path.dirname(os.path.abspath(__file__))
 BASE = os.environ.get("CS_BASE_URL", "https://contract-scan.dev").rstrip("/")
 X_URL, X_HANDLE = "https://x.com/ContractScanDev", "@ContractScanDev"
+GITHUB_URL = "https://github.com/contractscan-dev/contractscan"
+DATA_URL = "https://github.com/contractscan-dev/ai-solidity-experiment-2026-10"
 E = html.escape
 DESC = "Paste AI-written Solidity and get a plain-language deploy verdict in seconds: Slither + Aderyn static analysis, rug-pull pattern checks, and AI explanations. Not an audit."
 
@@ -35,7 +37,7 @@ def layout(title, desc, path, body, jsonld=None, og_type="website", extra_head="
 <header><a class="brand" href="/">Contract<span>Scan</span></a><nav aria-label="Main"><a href="/">Scan</a><a href="/blog">Blog</a><a href="/docs">API docs</a><a href="/#faq">FAQ</a></nav></header>
 <main>{body}</main>
 <footer><p>ContractScan is automated static analysis, <strong>not an audit</strong>. Results can miss bugs and contain false positives.</p>
-<p><a href="{X_URL}" rel="me noopener">X {X_HANDLE}</a> · <a href="/blog">Blog</a> · <a href="/docs">API docs</a> · <a href="/llms.txt">llms.txt</a> · support@contract-scan.dev</p></footer></body></html>'''
+<p><a href="{X_URL}" rel="me noopener">X {X_HANDLE}</a> · <a href="{GITHUB_URL}" rel="noopener">GitHub</a> · <a href="/blog">Blog</a> · <a href="/docs">API docs</a> · <a href="/llms.txt">llms.txt</a> · support@contract-scan.dev</p></footer></body></html>'''
 
 FAQ = [
  ("Is ContractScan an audit?", "No. ContractScan runs automated static analysis (Slither and Aderyn) plus simple rug-pull pattern checks, and uses AI only to explain the findings in plain language. It can miss bugs and report false positives. For contracts that will hold real value, get a professional audit."),
@@ -88,9 +90,9 @@ def blog_post(slug):
     p = next((x for x in posts() if x["slug"] == slug), None)
     if not p: return None
     cta = '<section class="card"><h2>Check your own contract</h2><p>Paste a single-file Solidity contract into <a href="/">ContractScan</a> for a free static-analysis check with plain-language explanations.</p><p class="mut"><small>ContractScan is automated static analysis, not an audit. For contracts holding real value, get a professional audit.</small></p></section>'
-    body = f'<article><h1>{E(p["title"])}</h1><p class="mut"><time datetime="{E(p["date"])}">{E(p["date"])}</time></p>{p["body"]}{cta}</article>{newsletter_form("blog:" + slug)}'
+    body = f'<article><h1>{E(p["title"])}</h1><p class="mut">By {E(p.get("author", "ContractScan Team"))} · <time datetime="{E(p["date"])}">{E(p["date"])}</time></p>{p["body"]}{cta}</article>{newsletter_form("blog:" + slug)}'
     ld = [{"@context": "https://schema.org", "@type": "Article", "headline": p["title"], "description": p["description"], "datePublished": p["date"], "dateModified": p.get("updated", p["date"]),
-           "image": BASE + "/static/og-image.png", "mainEntityOfPage": BASE + "/blog/" + slug, "author": {"@type": "Organization", "name": "ContractScan", "url": BASE},
+           "image": BASE + "/static/og-image.png", "mainEntityOfPage": BASE + "/blog/" + slug, "author": {"@type": "Organization", "name": p.get("author", "ContractScan Team"), "url": BASE},
            "publisher": {"@type": "Organization", "name": "ContractScan", "logo": {"@type": "ImageObject", "url": BASE + "/static/apple-touch-icon.png"}}}]
     return layout(p["title"] + " | ContractScan", p["description"], "/blog/" + slug, body, ld, og_type="article")
 
@@ -158,10 +160,11 @@ MCP server (stdio)
 Tool: scan_contract(source: string) -> JSON string with the same report as /api/scan (free tier, rate-limited per caller).
 Run locally from the source distribution: python mcp_server.py
 
+Source code (MIT): {gh}
 Support: support@contract-scan.dev · X: {x}
 """
 
-def docs(): return DOCS.format(base=BASE, x=X_URL)
+def docs(): return DOCS.format(base=BASE, x=X_URL, gh=GITHUB_URL)
 
 def llms_txt():
     return f"""# ContractScan
@@ -183,6 +186,8 @@ Key facts:
 
 ## Optional
 - [Blog]({BASE}/blog)
+- [Source code (MIT)]({GITHUB_URL})
+- [AI-written Solidity scan experiment data, 2026-10]({DATA_URL})
 - [X / Twitter]({X_URL})
 """
 

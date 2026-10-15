@@ -1,0 +1,266 @@
+<p><em>Disclosure: an LLM wrote the contracts in this post, because that is what we were testing. We wrote and checked the analysis and prose ourselves. This post is not an audit.</em></p>
+<h2>Short answer</h2>
+<p>We gave DeepSeek's API 24 plain-language requests for six common contract types, then ran Slither, Aderyn and ContractScan's own heuristics over the output.</p>
+<ul>
+<li><strong>22 of 24 compiled.</strong> The two failures had real syntax errors.</li>
+<li><strong>We confirmed two real high-severity bugs from the tools.</strong> Both are reentrancy paths in one AMM. A third is plausible but unverified. A heuristic also correctly flagged an owner function that can take every depositor's ETH, which the prompt had asked for.</li>
+<li><strong>Most "high" findings were false positives.</strong> Slither: 2 true, 1 uncertain, 4 false out of 7. Aderyn: 0 true out of 15.</li>
+<li><strong>The worst bug we found by reading the code was flagged by nothing.</strong> A fixed-APR staking contract pays rewards from other stakers' deposits.</li>
+<li><strong>Our own verdicts were wrong in both directions.</strong> We changed the scanner and re-ran the same files. Details are at the end.</li>
+</ul>
+<p>Twenty-four samples do not establish a "vulnerability rate" for AI-written Solidity. They do show that on these contracts, static analysis was noisy in both directions, and the most serious problems were economic or "it did what you asked" problems rather than classic code bugs.</p>
+<h2>Why we ran this</h2>
+<p>"Is AI-written code safe?" keeps coming up. Examples include the Hacker News thread about <a rel="noopener" href="https://news.ycombinator.com/item?id=44157131">a vibe-coded app hacked twice</a> and the <a rel="noopener" href="https://news.ycombinator.com/item?id=46115214">discussion</a> of <a rel="noopener" href="https://red.anthropic.com/2025/smart-contracts/">Anthropic's experiment with AI agents exploiting contracts</a>. We found almost no published data on LLM-written Solidity in particular, so we produced a small, fully published dataset.</p>
+<h2>Method</h2>
+<p><strong>Generation.</strong> We wrote 3 differently phrased prompts for each of 6 types: ERC-20 with tax, staking pool, ETH vault/escrow, NFT mint with allowlist, AMM/token launcher, and multisig/timelock. The prompts read like real requests. One example: <em>"I'm launching a meme coin on Base. Need a token contract with a 3% buy tax and 7% sell tax sent to my dev wallet, and I want to be able to change the taxes later."</em> Every prompt ended by asking for a single self-contained file with no imports and <code>pragma solidity ^0.8.20</code>.</p>
+<ul>
+<li>We sent 18 requests as <code>deepseek-chat</code> and repeated the first prompt of each type as <code>deepseek-reasoner</code> (6 more).</li>
+<li>Settings: default temperature, no system prompt, one turn.</li>
+<li>All calls ran on 2026-10-15 around 06:48 UTC.</li>
+<li>Both model names were <strong>served by DeepSeek-V4.1-Flash</strong>, according to the responses and <a rel="noopener" href="https://api-docs.deepseek.com/quick_start/pricing">DeepSeek's pricing page</a>. So in practice we compared one model with thinking off and on.</li>
+<li>Usage was 1,948 input and 91,285 output tokens, about $0.11 at the peak rate.</li>
+</ul>
+<p><strong>Scanning.</strong> ContractScan compiles each file in a sandbox with solc 0.8.24 and runs Slither 0.11.6 (default detectors), Aderyn 0.6.8, and regex "rug pattern" heuristics. We recorded compile failures and did not fix them.</p>
+<p><strong>Triage.</strong> We manually reviewed every high finding and labeled it true, false, uncertain, or "accurate but expected" (the flag is correct and the behavior is what the user asked for). We wrote no exploit PoCs, so "true" means confirmed by reading the code.</p>
+<h2>Results</h2>
+<table>
+<thead>
+<tr>
+<th>Contract type</th>
+<th>Samples</th>
+<th>Compiled</th>
+<th>Slither high</th>
+<th>Slither medium</th>
+<th>Aderyn high</th>
+<th>Heuristic high</th>
+<th>Verdicts at the time (deployable / fix_first / do_not_deploy)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>AMM / token launcher</td>
+<td>4</td>
+<td>3</td>
+<td>5</td>
+<td>7</td>
+<td>5</td>
+<td>1</td>
+<td>0 / 1 / 2</td>
+</tr>
+<tr>
+<td>ERC-20 with tax</td>
+<td>4</td>
+<td>4</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>0 / 4 / 0</td>
+</tr>
+<tr>
+<td>ETH vault / escrow</td>
+<td>4</td>
+<td>4</td>
+<td>1</td>
+<td>0</td>
+<td>3</td>
+<td>1</td>
+<td>1 / 2 / 1</td>
+</tr>
+<tr>
+<td>Multisig / timelock</td>
+<td>4</td>
+<td>4</td>
+<td>0</td>
+<td>0</td>
+<td>2</td>
+<td>0</td>
+<td>3 / 1 / 0</td>
+</tr>
+<tr>
+<td>NFT allowlist mint</td>
+<td>4</td>
+<td>3</td>
+<td>1</td>
+<td>0</td>
+<td>3</td>
+<td>3</td>
+<td>0 / 2 / 1</td>
+</tr>
+<tr>
+<td>Staking</td>
+<td>4</td>
+<td>4</td>
+<td>0</td>
+<td>4</td>
+<td>2</td>
+<td>1</td>
+<td>0 / 4 / 0</td>
+</tr>
+<tr>
+<td><strong>Total</strong></td>
+<td><strong>24</strong></td>
+<td><strong>22</strong></td>
+<td><strong>7</strong></td>
+<td><strong>11</strong></td>
+<td><strong>15</strong></td>
+<td><strong>6</strong></td>
+<td><strong>4 / 14 / 4</strong></td>
+</tr>
+</tbody>
+</table>
+<p>How we triaged the high findings:</p>
+<table>
+<thead>
+<tr>
+<th>Source</th>
+<th>High findings</th>
+<th>True</th>
+<th>Uncertain</th>
+<th>Accurate but expected</th>
+<th>False positive</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Slither</td>
+<td>7</td>
+<td>2</td>
+<td>1</td>
+<td>0</td>
+<td>4</td>
+</tr>
+<tr>
+<td>Aderyn</td>
+<td>15</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>15</td>
+</tr>
+<tr>
+<td>ContractScan heuristics</td>
+<td>6</td>
+<td>1</td>
+<td>0</td>
+<td>4</td>
+<td>1</td>
+</tr>
+</tbody>
+</table>
+<p>Only 1 of the 4 "do_not_deploy" verdicts rested on a true finding. The vault where the owner can take all deposits got only "fix_first". One ERC-20 got "fix_first" because our fee-change regex matched <code>setExcludedFromTax</code>.</p>
+<h2>Notable examples</h2>
+<h3>1. AMM: real reentrancy (Slither caught it, Aderyn didn't)</h3>
+<p><code>dex_launcher_1_chat</code> has no reentrancy guard and sends ETH before it syncs reserves:</p>
+<pre><code class="language-solidity">amountETHOut = (amountInWithFee * reserveETH) / (reserveToken * FEE_DENOMINATOR + amountInWithFee);
+_safeTransferETH(to, amountETHOut);   // external call to a caller-chosen address
+_update();                            // reserves synced only afterwards
+</code></pre>
+<p>The receiving contract can call back in and swap against a stale, too-high <code>reserveETH</code>. <code>removeLiquidity</code> has the same flaw: LP tokens are burned before reserves update. Slither reported both as <code>reentrancy-eth</code> (<a rel="noopener" href="https://swcregistry.io/docs/SWC-107">SWC-107</a>). The fix is a guard plus updating reserves before the transfer. The thinking-mode sample guarded every entry point, and Slither still flagged it (<code>reentrancy-balance</code>, a false positive).</p>
+<h3>2. Staking: insolvent by design, flagged by nothing</h3>
+<p>The prompt asked users to <em>"earn rewards in the same token at a fixed APR of 20%."</em> The contract accrues rewards with a standard accumulator:</p>
+<pre><code class="language-solidity">uint256 reward = rate * elapsed;
+accRewardPerToken += (reward * ACC_PRECISION) / totalStaked;
+</code></pre>
+<p>There is no funding function and no reward reserve, and claims are paid from the same pool as deposits. Unless someone keeps topping it up, early claimers are paid with later stakers' principal, and the last users out lose. The only tool output was a Slither medium on a timestamp equality, which is noise.</p>
+<h3>3. Vault: the "emergency withdraw" the user asked for</h3>
+<p>The prompt asked for <em>"an emergency withdraw for the owner just in case."</em> The model wrote exactly that:</p>
+<pre><code class="language-solidity">function emergencyWithdraw() external onlyOwner {
+    uint256 balance = address(this).balance;
+    totalLocked = 0;
+    (bool ok, ) = payable(owner).call{value: balance}(&quot;&quot;);
+</code></pre>
+<p>This sends every depositor's ETH to the owner. The model gave no warning about it. Only our heuristic flagged it, and at the time it produced just "fix_first". This is a case of the LLM shipping the default it was asked for, not inventing a bug.</p>
+<h3>4. Compile failures</h3>
+<p>One file declared an <code>interface</code> inside a contract. The other put <code>@openzeppelin/merkle-tree)</code> in a NatSpec comment, which solc rejects as an unknown tag. A user pasting either into Remix gets an error, not a contract.</p>
+<h2>What the tools got wrong</h2>
+<ul>
+<li><strong>Aderyn noise.</strong> <code>eth-send-unchecked-address</code> fired 7 times; each time the recipient was <code>msg.sender</code>, the owner or a configured fee address. <code>abi-encode-packed-hash-collision</code> fired 4 times on strings that are never hashed. <code>reentrancy-state-change</code> fired 3 times: on a constructor, on a view call, and on code that already updates state first. <code>weak-randomness</code> fired once on a transaction-ID hash.</li>
+<li><strong>Misses.</strong> The staking insolvency, and Aderyn's miss of the AMM reentrancy. We read the flagged code and spot-checked the rest but did not fully audit all 22 contracts, so other misses are likely.</li>
+</ul>
+<h2>What we changed after this experiment</h2>
+<p>We changed ContractScan's verdict logic based on this triage. We added regression tests using these contracts and re-scanned the same 24 files. We did not regenerate anything.</p>
+<ol>
+<li><strong>Corroboration.</strong> A single high finding no longer produces "do_not_deploy" by itself. Now one of these is required:</li>
+<li>a high-precision Slither detector (<code>reentrancy-eth</code>, <code>arbitrary-send-eth</code>, <code>suicidal</code> or <code>controlled-delegatecall</code>), or</li>
+<li>a second tool or heuristic flagging overlapping lines.</li>
+</ol>
+<p>Otherwise the verdict is "fix_first" with low confidence. Every report now includes the confidence level and the reasons for the verdict.
+2. <strong>Aderyn downgrades.</strong> The four Aderyn detectors above produced only false positives here. They now report as low severity: still visible, but they no longer drive the verdict.
+3. <strong>Owner can take user funds.</strong> If a contract accepts deposits or stakes, and an owner or admin function can send its whole balance (or an arbitrary amount) out with no visible timelock, the verdict is now "do_not_deploy". NFT mint proceeds, escrow arbiters, and withdrawals capped at "balance minus user deposits" are excluded.
+4. <strong>Fee-change regex.</strong> Exemption and recipient setters (<code>setExcludedFromTax</code>, <code>setFeeRecipient</code>, …) no longer count as fee changes.
+5. <strong>New medium heuristic.</strong> It flags fixed APR/APY rewards paid in the staked token when the contract has no funding function and no reward reserve. It is deliberately conservative.</p>
+<p>Verdicts before and after:</p>
+<table>
+<thead>
+<tr>
+<th>Verdict</th>
+<th>Before</th>
+<th>After</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>deployable</td>
+<td>4</td>
+<td>9</td>
+</tr>
+<tr>
+<td>fix_first</td>
+<td>14</td>
+<td>10</td>
+</tr>
+<tr>
+<td>do_not_deploy</td>
+<td>4</td>
+<td>3</td>
+</tr>
+<tr>
+<td>compile_fail</td>
+<td>2</td>
+<td>2</td>
+</tr>
+<tr>
+<td>Aderyn high findings</td>
+<td>15</td>
+<td>0 (downgraded to low)</td>
+</tr>
+</tbody>
+</table>
+<p>What moved:</p>
+<ul>
+<li><strong>Both true blockers now get "do_not_deploy":</strong> the AMM reentrancy and the vault owner-drain (which moved up from "fix_first").</li>
+<li><strong>Two false "do_not_deploy" verdicts became "fix_first" (low confidence):</strong> the guarded AMM and the NFT <code>tokenURI</code> case.</li>
+<li><strong>One false "do_not_deploy" remains.</strong> <code>arbitrary-send-eth</code> on a vault that only pays <code>msg.sender</code> or the owner's accrued fees. We kept that detector on the precise list. Across 24 files that is one data point, not enough to drop it.</li>
+<li><strong>Five contracts moved from "fix_first" to "deployable":</strong> they were held back only by downgraded Aderyn findings or the fee-regex misfire. "Deployable" means static analysis found nothing high or medium. It does not mean safe. The insolvent staking contract stays at "fix_first", now with an explicit solvency warning.</li>
+</ul>
+<p>Tuning rules against the same 24 files we measured on is overfitting by construction. The real test is the next, independent sample.</p>
+<h2>Limitations</h2>
+<ul>
+<li><strong>One model family.</strong> Every sample came from DeepSeek-V4.1-Flash, with thinking off and on.</li>
+<li><strong>Small n.</strong> Four samples per type, one temperature, one day. Read the counts as anecdotes with receipts.</li>
+<li><strong>No imports.</strong> We asked for self-contained files. Real users often get OpenZeppelin imports, so hand-rolled bugs are probably overrepresented.</li>
+<li><strong>Static analysis and code reading only.</strong> No fuzzing, fork tests or exploits.</li>
+<li><strong>One reviewer pass.</strong> The triage is our judgment, published row by row so you can dispute specific rows.</li>
+<li><strong>Not an audit.</strong> Do not deploy any of these contracts.</li>
+</ul>
+<h2>Checklist for AI-written Solidity</h2>
+<ol>
+<li>Compile with the exact solc you will deploy with.</li>
+<li>List every owner-only function that moves user funds, and decide whether you would accept it as a user.</li>
+<li>For anything paying yield, write down where rewards come from and check the contract enforces that.</li>
+<li>Treat any external call made before state is updated as a bug until proven otherwise.</li>
+<li>Treat scanner "high" labels as leads to check, not verdicts.</li>
+</ol>
+<h2>Reproduce it</h2>
+<p>All data is at <a rel="noopener" href="https://github.com/contractscan-dev/ai-solidity-experiment-2026-10">https://github.com/contractscan-dev/ai-solidity-experiment-2026-10</a> and the scanner source is at <a rel="noopener" href="https://github.com/contractscan-dev/contractscan">https://github.com/contractscan-dev/contractscan</a>. We publish the prompts, generation script, raw API responses (with returned model name and token usage), extracted contracts, scan script, raw findings, per-contract results before and after the change, and our per-finding triage (<code>review.csv</code>). Tools: Slither 0.11.6, Aderyn 0.6.8, solc 0.8.24. LLM output is non-deterministic, so a re-run will produce different contracts. The scan step is reproducible from the published <code>.sol</code> files.</p>
+<h2>Sources</h2>
+<ul>
+<li>DeepSeek API pricing and models: <a rel="noopener" href="https://api-docs.deepseek.com/quick_start/pricing">https://api-docs.deepseek.com/quick_start/pricing</a> (fetched 2026-10-15)</li>
+<li>Anthropic, "AI agents find $4.6M in blockchain smart contract exploits": <a rel="noopener" href="https://red.anthropic.com/2025/smart-contracts/">https://red.anthropic.com/2025/smart-contracts/</a></li>
+<li>HN discussion of the Anthropic post: <a rel="noopener" href="https://news.ycombinator.com/item?id=46115214">https://news.ycombinator.com/item?id=46115214</a></li>
+<li>HN, "I vibe coded and shipped an app in three days. It got hacked. Twice.": <a rel="noopener" href="https://news.ycombinator.com/item?id=44157131">https://news.ycombinator.com/item?id=44157131</a></li>
+<li>SWC-107 Reentrancy: <a rel="noopener" href="https://swcregistry.io/docs/SWC-107">https://swcregistry.io/docs/SWC-107</a></li>
+<li>Experiment data: <a rel="noopener" href="https://github.com/contractscan-dev/ai-solidity-experiment-2026-10">https://github.com/contractscan-dev/ai-solidity-experiment-2026-10</a></li>
+<li>Slither: <a rel="noopener" href="https://github.com/crytic/slither">https://github.com/crytic/slither</a> · Aderyn: <a rel="noopener" href="https://github.com/Cyfrin/aderyn">https://github.com/Cyfrin/aderyn</a></li>
+</ul>

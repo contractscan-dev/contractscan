@@ -21,9 +21,13 @@ def test_jsonld(env):
     faq = next(x for x in lds if x["@type"] == "FAQPage"); assert len(faq["mainEntity"]) >= 5
     assert 'id="faq"' in t and "<details>" in t
 
-def test_blog_empty_coming_soon_and_404(env):
+def test_blog_published_post_and_404(env):
     _, c, _ = env
-    assert "Coming soon" in c.get("/blog").text
+    assert "/blog/ai-written-solidity-24-contracts-scanned" in c.get("/blog").text
+    r = c.get("/blog/ai-written-solidity-24-contracts-scanned")
+    assert r.status_code == 200 and "By ContractScan Team" in r.text and 'rel="canonical" href="https://contract-scan.dev/blog/ai-written-solidity-24-contracts-scanned"' in r.text
+    assert "github.com/contractscan-dev/ai-solidity-experiment-2026-10" in r.text
+    assert "/blog/ai-written-solidity-24-contracts-scanned" in c.get("/sitemap.xml").text
     assert c.get("/blog/ai-solidity-common-vulnerabilities").status_code == 404   # drafts are not published
     assert c.get("/blog/../etc/passwd").status_code == 404
 
