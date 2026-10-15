@@ -44,7 +44,7 @@ FAQ = [
  ("What does ContractScan check?", "Common Solidity vulnerabilities detected by Slither and Aderyn (for example reentrancy, unchecked calls, dangerous tx.origin use, missing access control) and rug-like patterns such as owner minting, blacklists, owner-changeable fees, pausing, trading switches, owner withdraw functions and upgradeability."),
  ("Is my contract code executed?", "No. Your code is only compiled and statically analysed in an isolated sandbox with no network access and strict time and memory limits. It is never deployed or executed."),
  ("Who decides the verdict, the AI or the tools?", "The verdict (Deployable / Fix first / Do not deploy) is computed from the static analysis findings. The AI writes explanations and optional patches but cannot change the verdict."),
- ("What are the limits?", "Single-file Solidity, up to 500 lines and 100 KB, no imports (flatten first), compiler versions 0.8.19 to 0.8.28. The free tier gives 3 scans per day with the verdict and top 3 findings."),
+ ("What are the limits?", "Single Solidity file (flattened is fine), up to 2,000 lines / 250 KB. Only @openzeppelin/contracts imports (v4.9 or v5.x, resolved to a pinned vendored copy; no network); flatten any other imports. Compilers 0.8.0 to 0.8.30 (chosen from your pragma). The free tier gives 3 scans per day with the verdict and top 3 findings."),
  ("How much does it cost and how do I pay?", "Free: 3 scans/day. Full report with all findings and an auto-fix patch: $3 USDC for 1 scan or $10 USDC for 5 scans, paid on Base. You send a normal USDC transfer, paste the transaction hash and receive a redeem code. We never ask you to sign messages or approve token spending."),
  ("Can AI agents use ContractScan?", "Yes. There is a JSON API (POST /api/scan) and a minimal MCP server exposing a scan_contract tool. See the API docs and llms.txt."),
  ("Do you store my code?", "Contract source is processed in a temporary directory that is deleted after the scan. We keep anonymous usage counters, payment records and optional feedback you choose to send."),
@@ -54,9 +54,9 @@ def home(min_conf=3):
     faq_html = "".join(f"<details><summary>{E(q)}</summary><p>{E(a)}</p></details>" for q, a in FAQ)
     body = f'''<button id="lt" class="toggle sec" type="button">中文</button>
 <h1>Is your AI-written Solidity safe to deploy?</h1><div class="disc" id="disc">⚠️ Not an audit. Automated static analysis (Slither + Aderyn + heuristics) can miss bugs and give false positives.</div>
-<p id="intro">Paste a single-file Solidity contract (≤500 lines). We compile and statically analyze it — it is never executed.</p>
+<p id="intro">Paste a single-file Solidity contract (≤2,000 lines; OpenZeppelin imports OK). We compile and statically analyze it — it is never executed.</p>
 <noscript><p class="err">The scanner needs JavaScript. You can also use the JSON API: see <a href="/docs">/docs</a>.</p></noscript>
-<label for="src" class="hp">Solidity source</label><textarea id="src" placeholder="pragma solidity ^0.8.20; ..." maxlength="100000"></textarea><br><button id="go" type="button">Scan</button> <span id="st" role="status"></span>
+<label for="src" class="hp">Solidity source</label><textarea id="src" placeholder="pragma solidity ^0.8.20; ..." maxlength="250000"></textarea><br><button id="go" type="button">Scan</button> <span id="st" role="status"></span>
 <div id="out" aria-live="polite"></div><div id="fb" class="fb" hidden></div>
 <section class="card" id="buy"><h2 id="buyT">Full report + auto-fix (pay with USDC on Base)</h2>
 <p><label><input type="radio" name="pk" value="single" checked> <span id="b1">$3 USDC · 1 full scan</span></label> &nbsp; <label><input type="radio" name="pk" value="pack5"> <span id="b5">$10 USDC · 5 full scans</span></label></p>
@@ -114,8 +114,10 @@ ContractScan is automated static analysis (Slither + Aderyn + rug-pattern heuris
 
 Limits
 ------
-- Single-file Solidity, max 500 lines / 100 KB, no import statements (flatten first).
-- Supported compilers: 0.8.19 - 0.8.28 (chosen from your pragma).
+- Single-file Solidity (flattened files are fine), max 2,000 lines / 250 KB.
+- Imports: only @openzeppelin/contracts/... (v4.9.6 or v5.7.0, pinned vendored copies; `@openzeppelin/contracts@4.9.3/` style pins select the major). Other imports: flatten first.
+- Supported compilers: 0.8.0 - 0.8.30 (chosen from your pragma), all pre-installed.
+- Findings in OpenZeppelin library code are not reported; only your file is.
 - Code is compiled and statically analysed in a network-less sandbox. It is never executed.
 - Free tier: 3 scans per day per IP (verdict + top 3 findings, no patch).
 
@@ -175,7 +177,7 @@ Key facts:
 - Audience: developers and "vibe coders" who write Solidity with AI assistants, and coding agents that want a pre-deploy check.
 - The verdict is computed from static-analysis findings; AI only writes explanations and optional patches.
 - Code is compiled and analysed in a network-less sandbox and never executed.
-- Limits: single file, <=500 lines, no imports, solc 0.8.19-0.8.28.
+- Limits: single file, <=2000 lines / 250 KB, only OpenZeppelin imports (v4.9/v5), solc 0.8.0-0.8.30.
 - Pricing: free 3 scans/day (verdict + top 3 findings); $3 USDC = 1 full scan with all findings and an auto-fix patch; $10 USDC = 5 full scans. Paid with a plain USDC transfer on Base; no wallet signatures.
 - Interfaces: web UI, JSON API (POST /api/scan), MCP stdio server with tool `scan_contract`.
 
@@ -197,6 +199,8 @@ def llms_full():
 ## Known limitations
 - Static analysis only: no formal verification, fuzzing, economic or cross-contract analysis.
 - Rug-pattern checks are regex heuristics; they produce false positives (e.g. legitimate pause functions) and can be evaded.
-- Multi-file projects and imports are not supported yet.
+- Multi-file projects and non-OpenZeppelin imports are not supported (flatten first).
+- Not analysed: business logic, price/oracle manipulation and flash-loan attacks, cross-contract interactions, economic/MEV risk, off-chain risk. Every report lists this.
+- Every finding includes a `why` field saying which detector or pattern fired and on what code.
 - AI patches are rewrites; review them and re-test. A patch is only shown if a re-scan finds no high/medium issues.
 """

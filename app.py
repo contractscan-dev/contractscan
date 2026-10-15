@@ -69,7 +69,7 @@ PAYMENT = {"network": os.environ.get("CS_PAY_NETWORK", "base"), "chain_id": NET[
            "support_email": SUPPORT, "x402": X402}
 
 class ScanReq(BaseModel):
-    source: str = Field(..., max_length=100_000)
+    source: str = Field(..., max_length=250_000)
 class ClaimReq(BaseModel):
     tx_hash: str = Field(..., max_length=80)
 class CodeReq(BaseModel):
@@ -141,6 +141,17 @@ def feedback(req: FeedbackReq, request: Request):
     payments.add_feedback(sid, req.useful, req.comment.strip())
     return {"ok": True}
 
+class EventReq(BaseModel):
+    event: str = Field(..., max_length=20); scan_id: str = Field("", max_length=16); detail: str = Field("", max_length=20)
+@app.post("/api/event")
+def event(req: EventReq, request: Request):
+    """Client funnel events (result_viewed, pay_clicked). No source, IP, wallet or tx data is stored."""
+    if req.event not in payments.CLIENT_EVENTS: return JSONResponse({"ok": False, "error": "unknown event"}, status_code=400)
+    if not payments._rate("ev:" + _ip(request), 200): return JSONResponse({"ok": False, "error": "rate limited"}, status_code=429)
+    det = req.detail if req.detail in ("wallet", "manual", "claim", "copy_address") else None
+    payments.log_event(req.event, "web", req.scan_id or None, detail=det)
+    return {"ok": True}
+
 app.mount("/static", StaticFiles(directory=os.path.join(HERE, "static")), name="static")
 @app.get("/api/health")
 def health(): return {"ok": True}
@@ -154,7 +165,10 @@ def code_info(req: CodeReq, request: Request):
     return {"code": c, "credits": payments.code_credits(c)}
 @app.post("/api/pay/claim")
 async def pay_claim(req: ClaimReq, request: Request):
-    try: return await asyncio.to_thread(payments.claim, req.tx_hash, _ip(request))
+    try:
+        res = await asyncio.to_thread(payments.claim, req.tx_hash, _ip(request))
+        if not res.get("already_claimed"): payments.log_event("paid", "web", detail=f"credits:{int(res.get('credits') or 0)}")
+        return res
     except PayError as e: return _pay_err(e)
     except Exception: log.exception("claim"); return _pay_err(PayError(f"Unexpected error verifying payment; nothing was lost, retry later or email {SUPPORT}.", "internal", True), 500)
 
@@ -174,6 +188,8 @@ async def api_scan(req: ScanReq, request: Request):
         free_left = payments.free_take(ip, FREE_PER_DAY)
         if free_left < 0:
             raise HTTPException(402, {"error": "free_limit_reached", "message": f"Free tier: {FREE_PER_DAY} scans/day per IP. Buy credits or use x402.", "payment": PAYMENT})
+    scan_id = secrets.token_hex(8)
+    payments.log_event("scan_started", "web" if request.headers.get("x-cs-ui") else "api", scan_id)
     try:
         raw, rep = await _run(req.source, full=bool(wallet) or dev_full)
         ok = bool(raw.get("ok"))
@@ -184,21 +200,29 @@ async def api_scan(req: ScanReq, request: Request):
     if not ok:  # failed scans never consume a credit or a free scan
         if wallet: payments.refund(wallet)
         elif free_left is not None: payments.free_give_back(ip)
-        if rep is None: raise HTTPException(400, {"error": err, "charged": False})
+        if rep is None:
+            payments.log_event("scan_failed", "web" if request.headers.get("x-cs-ui") else "api", scan_id, detail="rejected")
+            raise HTTPException(400, {"error": err, "charged": False})
         rep["charged"] = False
     else: rep["charged"] = "credit" if wallet else ("free" if free_left is not None else "none")
     if free_left is not None and ok: rep["free_remaining"] = free_left
     if code: rep["credits"] = payments.code_credits(code)
-    rep["scan_id"] = secrets.token_hex(8)
-    if ok: payments.log_scan(rep["scan_id"], rep.get("verdict"), rep.get("tier"))
+    rep["scan_id"] = scan_id
+    surf = "web" if request.headers.get("x-cs-ui") else "api"
+    if ok: payments.log_scan(rep["scan_id"], rep.get("verdict"), rep.get("tier")); payments.log_event("scan_completed", surf, scan_id, rep.get("verdict"), rep.get("tier"))
+    else: payments.log_event("scan_failed", surf, scan_id, detail="compile_or_input")
     return rep
 
 @app.post("/api/x402/scan")
 async def x402_quick(req: ScanReq):
     if not X402["enabled"]: raise HTTPException(503, {"error": "x402 not enabled", "reason": X402.get("reason")})
+    payments.log_event("scan_started", "x402")
     raw, rep = await _run(req.source, full=False)
+    payments.log_event("scan_completed" if raw.get("ok") else "scan_failed", "x402", verdict=rep.get("verdict"), detail="quick")
     return {k: rep.get(k) for k in ("ok", "error", "disclaimer", "verdict", "verdict_label", "counts", "summary", "findings", "findings_hidden")} | {"tier": "x402_quick"}
 @app.post("/api/x402/scan-full")
 async def x402_full(req: ScanReq):
     if not X402["enabled"]: raise HTTPException(503, {"error": "x402 not enabled", "reason": X402.get("reason")})
-    raw, rep = await _run(req.source, full=True); rep["tier"] = "x402_full"; return rep
+    payments.log_event("scan_started", "x402")
+    raw, rep = await _run(req.source, full=True); rep["tier"] = "x402_full"
+    payments.log_event("scan_completed" if raw.get("ok") else "scan_failed", "x402", verdict=rep.get("verdict"), detail="full"); return rep

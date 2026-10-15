@@ -43,7 +43,8 @@ def db():
       create table if not exists mcp_usage(caller text, day text, n int, primary key(caller, day));
       create table if not exists subscribers(email text primary key, ts int, source text, confirmed int not null default 0);
       create table if not exists scans(scan_id text primary key, ts int, verdict text, tier text);
-      create table if not exists feedback(ts int, scan_id text, useful int, comment text, verdict text);""")
+      create table if not exists feedback(ts int, scan_id text, useful int, comment text, verdict text);
+      create table if not exists funnel(ts int, day text, event text, surface text, scan_id text, verdict text, detail text);""")
         _init_done.add(DB)
     try: yield c
     finally: c.close()
@@ -189,6 +190,24 @@ def add_subscriber(email, source):
     with _lock, db() as c: c.execute("insert into subscribers(email,ts,source) values(?,?,?) on conflict(email) do nothing", (email, int(time.time()), source))
 def log_scan(scan_id, verdict, tier):
     with db() as c: c.execute("insert or ignore into scans values(?,?,?,?)", (scan_id, int(time.time()), verdict, tier))
+# ---------- funnel analytics (privacy-preserving) ----------
+# Stores only: timestamp, UTC day, event name, surface (web|api|mcp|x402), random scan_id, verdict and a short
+# allow-listed detail. Never stores contract source, IP addresses, wallet addresses, tx hashes, emails or redeem codes.
+FUNNEL_EVENTS = {"scan_started", "scan_completed", "scan_failed", "result_viewed", "pay_clicked", "paid"}
+CLIENT_EVENTS = {"result_viewed", "pay_clicked"}
+def log_event(event, surface="web", scan_id=None, verdict=None, detail=None):
+    if event not in FUNNEL_EVENTS: return False
+    try:
+        sid = scan_id if scan_id and re.fullmatch(r"[0-9a-f]{16}", scan_id) else None
+        det = re.sub(r"[^a-z0-9_:.-]", "", str(detail).lower())[:40] if detail is not None else None
+        with db() as c: c.execute("insert into funnel values(?,?,?,?,?,?,?)", (int(time.time()), _day(), event, str(surface)[:10], sid, (verdict or None) and str(verdict)[:20], det))
+        return True
+    except Exception: log.exception("funnel"); return False      # analytics must never break the product
+def funnel_summary(days=30):
+    since = int(time.time()) - days * 86400
+    with db() as c: rows = c.execute("select event, surface, count(*) from funnel where ts>=? group by event, surface order by event", (since,)).fetchall()
+    return [{"event": e, "surface": s, "n": n} for e, s, n in rows]
+
 def add_feedback(scan_id, useful, comment):
     with db() as c:
         r = c.execute("select verdict from scans where scan_id=?", (scan_id,)).fetchone() if scan_id else None

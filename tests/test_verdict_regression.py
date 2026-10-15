@@ -61,7 +61,7 @@ TOOLS = shutil.which("aderyn") or Path.home().joinpath(".local/bin/aderyn").exis
 @pytest.mark.skipif(not TOOLS or not S.installed_solcs(), reason="analysis tools not installed")
 @pytest.mark.parametrize("name,expected", [("dex_launcher_1_chat", "do_not_deploy"),   # real reentrancy-eth
                                            ("eth_vault_3_chat", "do_not_deploy"),      # owner takes deposits
-                                           ("dex_launcher_1_reasoner", "fix_first"),   # FP reentrancy-balance (guarded)
+                                           ("dex_launcher_1_reasoner", "do_not_deploy"),   # bundled token has an unguarded external mint() (token:unguarded_mint, true positive)
                                            ("nft_allowlist_1_chat", "fix_first"),      # FP encode-packed on tokenURI
                                            ("erc20_tax_1_chat", "deployable")])        # fee_change misfire fixed
 def test_experiment_verdicts(name, expected):

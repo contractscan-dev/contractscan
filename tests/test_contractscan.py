@@ -151,7 +151,7 @@ def test_xff_spoof_ignored(env):
     assert c.post("/api/scan", json={"source": "x"}, headers={"x-forwarded-for": "8.8.8.8"}).status_code == 402
 
 def test_large_input_rejected(env):
-    _, c, _ = env; assert c.post("/api/scan", json={"source": "a" * 100_001}).status_code == 422
+    _, c, _ = env; assert c.post("/api/scan", json={"source": "a" * 250_001}).status_code == 422
 
 def test_security_headers_and_no_inline_script(env):
     _, c, _ = env; r = c.get("/")
@@ -174,7 +174,7 @@ def test_verdict_not_from_llm(monkeypatch, tmp_path):
 
 def test_pragma_allowlist_no_download(monkeypatch):
     import scanner
-    monkeypatch.setattr(scanner, "installed_solcs", lambda: ["0.8.20", "0.8.24"])
+    monkeypatch.setattr(scanner, "installed_solcs", lambda *a: ["0.8.20", "0.8.24"])
     called = []; monkeypatch.setattr(scanner.subprocess, "run", lambda *a, **k: called.append(a))
     assert scanner.pick_solc("pragma solidity ^0.8.0;") == "0.8.24"
     assert scanner.pick_solc("pragma solidity >=0.8.0 <0.8.21;") == "0.8.20"
@@ -184,7 +184,7 @@ def test_pragma_allowlist_no_download(monkeypatch):
 
 def test_scan_input_validation():
     import scanner
-    for bad in ["", "pragma solidity ^0.8.20;\n" + "\n" * 600, 'pragma solidity ^0.8.20;\nimport "/etc/passwd";', "a" * 100_001, "pragma solidity ^0.8.20;\x00"]:
+    for bad in ["", "pragma solidity ^0.8.20;\n" + "\n" * 2001, 'pragma solidity ^0.8.20;\nimport "/etc/passwd";', 'pragma solidity ^0.8.20;\nimport "@openzeppelin/contracts/../../../etc/passwd";', "a" * 250_001, "pragma solidity ^0.8.20;\x00"]:
         with pytest.raises(ValueError): scanner.scan(bad)
 
 def test_mcp_limit(env):

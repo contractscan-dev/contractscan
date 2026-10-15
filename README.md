@@ -12,9 +12,11 @@ Hosted version: https://contract-scan.dev
 - A single high-severity finding blocks deployment only if one of these holds:
   - it comes from a high-precision Slither detector (`reentrancy-eth`, `arbitrary-send-eth`, `suicidal`, `controlled-delegatecall`);
   - another tool or a heuristic flags overlapping lines;
-  - the owner can take funds that users deposited.
+  - the owner can take funds that users deposited;
+  - anyone can mint tokens, anyone can burn another account's tokens, or a self-transfer inflates the balance (token-logic heuristics).
 - Otherwise the result is "fix first" with low confidence.
-- Each report includes `verdict_confidence` and `verdict_reasons`.
+- Each report includes `verdict_confidence` and `verdict_reasons`. Every finding has a `why` field (which detector or pattern fired, on what code), and every report has a `not_analyzed` list: business logic, price/oracle manipulation, cross-contract interactions, economic/MEV and off-chain risk are not checked.
+- Token-logic heuristics (`token:*`) target root causes seen in real exploits: self-transfer balance inflation, unguarded mint, unguarded burn of another account, rewriting the AMM pair balance plus `sync()`, extra burns on pool transfers, and pricing from `address(this).balance` during a payable call.
 - The heuristic thresholds were tuned on a small public experiment: https://github.com/contractscan-dev/ai-solidity-experiment-2026-10
 
 ## Run locally
@@ -24,7 +26,8 @@ Requirements: Linux, Python 3.11+, `bwrap` (bubblewrap, optional but recommended
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
-solc-select install 0.8.24 && solc-select use 0.8.24   # scanner only uses pre-installed compilers
+for v in $(seq 0 30); do solc-select install 0.8.$v; done   # scanner only uses pre-installed compilers
+CS_ALLOW_PREWARM=1 python scripts/prewarm_compilers.py      # one-time: cache compilers for Aderyn (no downloads at scan time)
 # install aderyn: https://github.com/Cyfrin/aderyn#installation
 cp config.env.example config.env                       # edit values
 CS_VENV=$VIRTUAL_ENV uvicorn app:app --host 127.0.0.1 --port 8787
@@ -36,7 +39,7 @@ CS_VENV=$VIRTUAL_ENV uvicorn app:app --host 127.0.0.1 --port 8787
 
 Each scan runs in a fresh temporary directory inside bubblewrap. The sandbox has no network and a read-only root, and runs under memory, CPU and time limits. Contract code is only compiled and analyzed, never executed.
 
-Limits: single file, no imports (flatten first), 500 lines, 100 KB, and pre-installed solc versions only.
+Limits: single file (flattened is fine), 2,000 lines, 250 KB, solc 0.8.0-0.8.30 (pre-installed only). The only imports allowed are `@openzeppelin/contracts/...`. They resolve to pinned vendored copies in `vendor/` (v4.9.6 and v5.7.0, MIT, sha256 in `vendor/README.md`), and nothing is fetched at scan time. Findings inside OpenZeppelin code are not reported.
 
 ## MCP
 
