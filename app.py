@@ -12,6 +12,7 @@ def _load_cfg(p=os.path.join(os.path.dirname(__file__), "config.env")):
                 k, v = l.split("=", 1); os.environ.setdefault(k.strip(), v.strip())
 _load_cfg()
 from scanner import scan
+import second_opinion
 from explain import build_report
 import payments
 import pages
@@ -147,10 +148,16 @@ class EventReq(BaseModel):
 def event(req: EventReq, request: Request):
     """Client funnel events (result_viewed, pay_clicked). No source, IP, wallet or tx data is stored."""
     if req.event not in payments.CLIENT_EVENTS: return JSONResponse({"ok": False, "error": "unknown event"}, status_code=400)
-    if not payments._rate("ev:" + _ip(request), 200): return JSONResponse({"ok": False, "error": "rate limited"}, status_code=429)
+    if not payments._rate("ev:" + _ip(request), 20): return JSONResponse({"ok": False, "error": "rate limited"}, status_code=429)
+    if is_bot_ua(request.headers.get("user-agent", "")): return {"ok": True, "logged": False}   # silently ignored
+    why = payments.client_event_ok(req.event, req.scan_id, payments.client_hash(request.headers.get("user-agent", "")))
+    if why: return {"ok": True, "logged": False}
     det = req.detail if req.detail in ("wallet", "manual", "claim", "copy_address") else None
-    payments.log_event(req.event, "web", req.scan_id or None, detail=det)
-    return {"ok": True}
+    payments.log_event(req.event, "web", req.scan_id, detail=det)
+    return {"ok": True, "logged": True}
+
+BOT_UA = re.compile(r"bot|crawl|spider|slurp|headless|phantom|selenium|puppeteer|playwright|python|curl|wget|httpx|go-http|axios|node-fetch|okhttp|java/|libwww|scrapy|preview|monitor|uptime", re.I)
+def is_bot_ua(ua): return not ua or len(ua) < 20 or bool(BOT_UA.search(ua))
 
 app.mount("/static", StaticFiles(directory=os.path.join(HERE, "static")), name="static")
 @app.get("/api/health")
@@ -172,9 +179,22 @@ async def pay_claim(req: ClaimReq, request: Request):
     except PayError as e: return _pay_err(e)
     except Exception: log.exception("claim"); return _pay_err(PayError(f"Unexpected error verifying payment; nothing was lost, retry later or email {SUPPORT}.", "internal", True), 500)
 
-async def _run(source, full):
-    async with _sem: raw = await asyncio.wait_for(asyncio.to_thread(scan, source), 300)
-    return raw, await asyncio.to_thread(build_report, raw, source, full)
+async def _ai(source, scan_id):
+    """Advisory AI second opinion; runs concurrently with the scan and can never fail or change it."""
+    try: return await asyncio.wait_for(asyncio.to_thread(second_opinion.second_opinion, source, scan_id), second_opinion.TIMEOUT * 2 + 30)
+    except Exception: return second_opinion._skip("error")
+async def _run(source, full, scan_id=None, ai=False):
+    ai_task = asyncio.create_task(_ai(source, scan_id)) if ai else None
+    try:
+        async with _sem: raw = await asyncio.wait_for(asyncio.to_thread(scan, source), 300)
+        rep = await asyncio.to_thread(build_report, raw, source, full)
+    except BaseException:
+        if ai_task: ai_task.cancel()
+        raise
+    if ai_task:
+        op = await ai_task
+        if raw.get("ok") and isinstance(rep, dict): rep["ai_second_opinion"] = op   # verdict is untouched: separate key
+    return raw, rep
 
 @app.post("/api/scan")
 async def api_scan(req: ScanReq, request: Request):
@@ -189,9 +209,10 @@ async def api_scan(req: ScanReq, request: Request):
         if free_left < 0:
             raise HTTPException(402, {"error": "free_limit_reached", "message": f"Free tier: {FREE_PER_DAY} scans/day per IP. Buy credits or use x402.", "payment": PAYMENT})
     scan_id = secrets.token_hex(8)
+    if request.headers.get("x-cs-ui"): payments.bind_scan(scan_id, payments.client_hash(request.headers.get("user-agent", "")))
     payments.log_event("scan_started", "web" if request.headers.get("x-cs-ui") else "api", scan_id)
     try:
-        raw, rep = await _run(req.source, full=bool(wallet) or dev_full)
+        raw, rep = await _run(req.source, full=bool(wallet) or dev_full, scan_id=scan_id, ai=True)
         ok = bool(raw.get("ok"))
     except ValueError as e:
         raw, rep, ok = None, None, False; err = str(e)

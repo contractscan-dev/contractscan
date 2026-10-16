@@ -4,12 +4,12 @@ const T={en:{disc:"⚠️ Not an audit. Automated static analysis (Slither + Ade
 buyT:"Full report + auto-fix (pay with USDC on Base)",b1:"$3 USDC · 1 full scan",b5:"$10 USDC · 5 full scans",copyAddr:"Copy address",wpay:"Pay with browser wallet",manualT:"…or send manually from any wallet/exchange, then paste the tx hash below. No signatures are ever requested.",claimB:"Get my redeem code",
 copyCode:"Copy code",useCode:"Use code",forget:"Forget code",codeWarn:"SAVE THIS CODE NOW. It holds your credits. Anyone with the code can use it. It can be re-shown from the tx hash only within 1 hour of the first claim.",credits:"Credits",
 pay:"Free: 3 scans/day per IP (verdict + top 3). ",sup:"Payment issue? Email ",sumT:"AI summary (verdict above comes from the static-analysis tools, not the AI):",more:"more findings in full report",patch:"Patched contract (re-scanned; review before use)",
-send:a=>`Send exactly ${a} USDC on Base (chain 8453) to:`,min:"Minimum $3. Less than $3 grants no credits (flagged for manual refund). Only USDC on Base counts.",copied:"Copied",why:"Why it fired: ",na:"Not analysed (static analysis cannot check these):"},
+send:a=>`Send exactly ${a} USDC on Base (chain 8453) to:`,min:"Minimum $3. Less than $3 grants no credits (flagged for manual refund). Only USDC on Base counts.",copied:"Copied",why:"Why it fired: ",aiT:"AI second opinion (advisory, not the verdict)",aiLine:"line",na:"Not analysed (static analysis cannot check these):"},
 zh:{disc:"⚠️ 本服务不是审计。自动化静态分析（Slither + Aderyn + 规则）可能漏报或误报。",intro:"粘贴单文件 Solidity 合约（≤2000 行，支持 OpenZeppelin 导入）。我们只编译并做静态分析，绝不执行合约。",go:"扫描",lt:"English",scanning:"扫描中…",lines:"行",
 buyT:"完整报告 + 自动修复（用 Base 链 USDC 支付）",b1:"$3 USDC · 1 次完整扫描",b5:"$10 USDC · 5 次完整扫描",copyAddr:"复制地址",wpay:"用浏览器钱包支付",manualT:"……或从任意钱包/交易所手动转账，然后在下方粘贴交易哈希。我们绝不会要求签名。",claimB:"获取兑换码",
 copyCode:"复制兑换码",useCode:"使用兑换码",forget:"清除兑换码",codeWarn:"请立即保存此兑换码！次数绑定在兑换码上，任何拿到兑换码的人都能使用。首次领取后 1 小时内可凭交易哈希重新查看。",credits:"剩余次数",
 pay:"免费：每 IP 每天 3 次（结论 + 前 3 个问题）。",sup:"付款遇到问题？请发邮件至 ",sumT:"AI 摘要（上方结论来自静态分析工具，而非 AI）：",more:"个问题在完整报告中",patch:"修复后的合约（已复检，使用前请自行审查）",
-send:a=>`请在 Base 链（chainId 8453）上向以下地址转账恰好 ${a} USDC：`,min:"最低 $3。少于 $3 不发放次数（将标记人工退款审核）。只认 Base 链 USDC。",copied:"已复制",why:"触发原因：",na:"未分析的内容（静态分析无法检查）："}};
+send:a=>`请在 Base 链（chainId 8453）上向以下地址转账恰好 ${a} USDC：`,min:"最低 $3。少于 $3 不发放次数（将标记人工退款审核）。只认 Base 链 USDC。",copied:"已复制",why:"触发原因：",aiT:"AI 第二意见（仅供参考，不是结论）",aiLine:"行",na:"未分析的内容（静态分析无法检查）："}};
 let lang=localStorage.lang==="zh"?"zh":"en",last=null,P=null;
 const $=id=>document.getElementById(id);
 function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=String(text);return e}
@@ -35,6 +35,11 @@ function render(r){const out=$("out");out.replaceChildren();
  for(const f of fs){const sev=["high","medium","low","info"].includes(f.severity)?f.severity:"info";const d=el("div","f "+sev);
   d.append(el("b",null,`[${S(f["severity_"+lang])}] ${S(f.title)}`)," ",el("small",null,`${S(f.tool)} · ${T[lang].lines} ${(Array.isArray(f.lines)?f.lines:[]).map(Number).join(",")}`),el("br"),document.createTextNode(S(f["explain_"+lang])));if(f.why){d.append(el("br"),el("small",null,T[lang].why+S(f.why)))}out.append(d)}
  if(r.findings_hidden)out.append(el("p",null,"+"+S(r.findings_hidden)+" "+T[lang].more));
+ const ai=r.ai_second_opinion;if(ai&&typeof ai==="object"){const box=el("div","ai");box.append(el("h3",null,T[lang].aiT));if(ai.label&&ai.label[lang])box.append(el("small",null,S(ai.label[lang])));
+  if(ai.note&&ai.note[lang])box.append(el("p",null,S(ai.note[lang])));
+  for(const it of (Array.isArray(ai.issues)?ai.issues:[])){const sev=["high","medium","low"].includes(it.severity)?it.severity:"low";const d=el("div","f "+sev);
+   d.append(el("b",null,`[AI · ${S(sev)}] ${S(it.title)}`)," ",el("small",null,`${T[lang].aiLine} ${Number(it.line)||""}`),el("br"),el("code",null,S(it.code)),el("br"),document.createTextNode(S(it["explain_"+lang])));box.append(d)}
+  out.append(box)}
  if(Array.isArray(r.not_analyzed)&&r.not_analyzed.length){const ul=el("ul");for(const x of r.not_analyzed)ul.append(el("li",null,S(x)));out.append(el("small",null,T[lang].na),ul)}
  out.append(el("p",null,r.patch_note));
  if(r.patch){out.append(el("h3",null,T[lang].patch),el("pre",null,r.patch))}}

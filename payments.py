@@ -44,7 +44,13 @@ def db():
       create table if not exists subscribers(email text primary key, ts int, source text, confirmed int not null default 0);
       create table if not exists scans(scan_id text primary key, ts int, verdict text, tier text);
       create table if not exists feedback(ts int, scan_id text, useful int, comment text, verdict text);
-      create table if not exists funnel(ts int, day text, event text, surface text, scan_id text, verdict text, detail text);""")
+      create table if not exists funnel(ts int, day text, event text, surface text, scan_id text, verdict text, detail text);
+      create table if not exists scan_client(scan_id text primary key, ts int, ch text);
+      create table if not exists ai_cost(ts int, day text, scan_id text, model text, prompt_tokens int, cache_hit_tokens int, completion_tokens int, usd real, status text);""")
+        cols = [r[1] for r in c.execute("pragma table_info(funnel)")]
+        if "bot" not in cols:   # one-time migration: flag (never delete) client events that reference no real scan
+            c.execute("alter table funnel add column bot int not null default 0")
+            c.execute("update funnel set bot=1 where event in ('result_viewed','pay_clicked') and (scan_id is null or scan_id not in (select scan_id from scans))")
         _init_done.add(DB)
     try: yield c
     finally: c.close()
@@ -200,12 +206,49 @@ def log_event(event, surface="web", scan_id=None, verdict=None, detail=None):
     try:
         sid = scan_id if scan_id and re.fullmatch(r"[0-9a-f]{16}", scan_id) else None
         det = re.sub(r"[^a-z0-9_:.-]", "", str(detail).lower())[:40] if detail is not None else None
-        with db() as c: c.execute("insert into funnel values(?,?,?,?,?,?,?)", (int(time.time()), _day(), event, str(surface)[:10], sid, (verdict or None) and str(verdict)[:20], det))
+        with db() as c: c.execute("insert into funnel(ts, day, event, surface, scan_id, verdict, detail) values(?,?,?,?,?,?,?)", (int(time.time()), _day(), event, str(surface)[:10], sid, (verdict or None) and str(verdict)[:20], det))
         return True
     except Exception: log.exception("funnel"); return False      # analytics must never break the product
+# Client events are only accepted for a scan_id this server issued (an unguessable 64-bit id that is only returned to
+# the client that ran the scan), recently, to a client with the same user agent (keyed HMAC; raw UA never stored,
+# bindings purged after a day), and only once per (event, scan_id). IP is deliberately not part of the binding:
+# mobile/CGNAT/privacy-relay users change IP between requests.
+CLIENT_EVENT_TTL = 2 * 3600
+_SALT_FILE = os.path.join(os.path.dirname(DB), ".client_salt")
+def _salt():
+    try: return open(_SALT_FILE, "rb").read()
+    except FileNotFoundError:
+        os.makedirs(os.path.dirname(_SALT_FILE), exist_ok=True); s = os.urandom(32)
+        fd = os.open(_SALT_FILE, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "wb") as f: f.write(s)
+        return s
+def client_hash(ua):
+    import hmac, hashlib
+    return hmac.new(_salt(), f"ua|{ua}".encode(), hashlib.sha256).hexdigest()[:24]
+def bind_scan(scan_id, ch):
+    now = int(time.time())
+    with db() as c:
+        c.execute("delete from scan_client where ts<?", (now - 86400,))
+        c.execute("insert or replace into scan_client values(?,?,?)", (scan_id, now, ch))
+def client_event_ok(event, scan_id, ch):
+    """Return None if the client event may be logged, else a short reason."""
+    if not scan_id or not re.fullmatch(r"[0-9a-f]{16}", scan_id): return "no_scan"
+    with db() as c:
+        r = c.execute("select ts, ch from scan_client where scan_id=?", (scan_id,)).fetchone()
+        if not r or r[1] != ch: return "unknown_scan"
+        if time.time() - r[0] > CLIENT_EVENT_TTL: return "stale_scan"
+        if c.execute("select 1 from funnel where event=? and scan_id=? limit 1", (event, scan_id)).fetchone(): return "duplicate"
+    return None
+def log_ai_cost(scan_id, model, prompt, hit, out, usd, status):
+    """Per-scan AI second-opinion cost (upper bound at peak price). No source or answer text stored."""
+    try:
+        with db() as c: c.execute("insert into ai_cost values(?,?,?,?,?,?,?,?,?)", (int(time.time()), _day(), scan_id, model, prompt, hit, out, usd, str(status)[:60]))
+    except Exception: log.exception("ai_cost")
+def ai_spend_today():
+    with db() as c: return c.execute("select coalesce(sum(usd),0) from ai_cost where day=?", (_day(),)).fetchone()[0]
 def funnel_summary(days=30):
     since = int(time.time()) - days * 86400
-    with db() as c: rows = c.execute("select event, surface, count(*) from funnel where ts>=? group by event, surface order by event", (since,)).fetchall()
+    with db() as c: rows = c.execute("select event, surface, count(*) from funnel where ts>=? and bot=0 group by event, surface order by event", (since,)).fetchall()
     return [{"event": e, "surface": s, "n": n} for e, s, n in rows]
 
 def add_feedback(scan_id, useful, comment):

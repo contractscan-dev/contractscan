@@ -13,3 +13,4 @@ button.sec{background:#1f2937;color:var(--fg)}.disc{background:#2a1f05;border:2p
 .toggle{float:right}.card{background:var(--card);padding:14px;border-radius:8px;margin:16px 0}.hp{position:absolute;left:-10000px;width:1px;height:1px;overflow:hidden}
 details{background:var(--card);margin:8px 0;padding:8px 12px;border-radius:6px}summary{cursor:pointer;font-weight:600}
 footer{border-top:1px solid #1f2937;margin-top:32px;font-size:.9em;color:var(--mut)}article h2{margin-top:1.6em}.fb{margin-top:12px}
+.ai{border:1px dashed #888;padding:8px 12px;margin:16px 0;border-radius:6px}.ai h3{margin:0 0 4px}.ai code{white-space:pre-wrap;word-break:break-all}
